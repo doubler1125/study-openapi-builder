@@ -1,0 +1,131 @@
+{% macro prepareSimpleValue(valueName, field, root, propertyName) -%}
+{%- endmacro %}
+
+{% macro simpleValue(valueName, field, root, propertyName) -%}
+{{valueName}}
+{%- endmacro %}
+
+{% macro prepareRefObjectValue(valueName, field, root, propertyName) -%}
+const {{valueName}} = await (new {{utils.typeFor(field)}}(await {{valueName}}, this.ctx)).dump();
+{%- endmacro %}
+
+{%- macro refObjectValue(valueName, field, root, propertyName) -%}
+(({{ valueName }}) && (await (new {{utils.typeFor(field)}}(await {{ valueName }}, this.ctx)).dump()))
+{%- endmacro -%}
+
+{%- macro prepareObjectValue(valueName, field, root) -%}
+{%- if root -%}
+const [
+{%- for propertyName, propertySchema in field.properties -%}
+{{ propertyName }},
+{%- endfor -%}
+] = await Promise.all([
+{%- for propertyName, propertySchema in field.properties -%}
+{{ value(valueName+'.'+propertyName, propertySchema, false, propertyName) }},
+{%- endfor -%}
+]) as [
+  {%- for propertyName, propertySchema in field.properties -%}
+  {{utils.typeFor(propertySchema)}},
+  {%- endfor -%}
+];
+{%- else -%}
+{%- endif -%}
+{% endmacro -%}
+
+{%- macro prepareMapValue(valueName, field, root, schema, ignoreProperties) %}
+{% endmacro -%}
+
+{% macro objectValue(valueName, field, root, propertyName) -%}
+{% if root -%}
+  {%- if not field.properties and not field.additionalProperties -%}
+    {{simpleValue(valueName, field, root, schema)}}
+  {%- else -%}
+    { {% if field.properties -%}
+        {% for propertyName, propertySchema in field.properties -%}
+      {{ propertyName }}, {% endfor %}
+      {%- endif -%}
+      {%- if field.additionalProperties -%}
+        ...(await (async() => {
+          const result = {};
+          for (const [key,value] of ({{valueName}} instanceof Map ? {{valueName}}.entries() : Object.entries({{valueName}}))) {
+            {% if field.properties -%} if (!{{Object.keys(field.properties)}}.includes(key)) { {%- endif -%}
+            result[key] = {{ value('value', field.additionalProperties, false) }};
+            {%- if field.properties %}} {%- endif %}
+          };
+          return result;
+        })()),
+      {%- endif -%}
+    }
+  {%- endif -%}
+{%- else -%}
+  ({{ valueName }} && (await (async {{ propertyName }} => {
+    {{- prepareValue(propertyName, field, true) -}}
+    return {{ value(propertyName, field, true) -}};})({{ valueName }})))
+{%- endif -%}
+{%- endmacro %}
+
+{% macro prepareArrayValue(valueName, field, root, propertyName) -%}
+{%- endmacro %}
+
+{% macro arrayValue(valueName, field, root, propertyName) -%}
+(await Promise.all((await {{valueName}} || []).map(async item => ({{ value('item', field.items, false, propertyName) }}))))
+{%- endmacro %}
+
+{%- macro value(valueName, field, root, propertyName) -%}
+
+{%- if field.type === 'array' -%}
+{{ arrayValue(valueName, field, root, propertyName) }}
+{%- elif field.$ref -%}
+{{ refObjectValue(valueName, field, root, propertyName) }}
+{%- elif field.type === 'object' -%}
+{{ objectValue(valueName, field, root, propertyName) }}
+{%- else -%}
+{{ simpleValue(valueName, field, root, propertyName) }}
+{%- endif -%}
+
+{%- endmacro -%}
+
+{% macro assignValue(resultName, valueName, field) %}
+{{resultName}} = {{ value(valueName, field) }};
+{% endmacro %}
+
+{% macro prepareValue(valueName, field, root) -%}
+{%- if field.type === 'array' -%}
+{{ prepareArrayValue(valueName, field, root) }}
+{%- elif field.$ref -%}
+{{ prepareRefObjectValue(valueName, field, root) }}
+{%- elif field.type === 'object' -%}
+  {%- if field.properties -%}
+  {{ prepareObjectValue(valueName, field, root) }}
+  {%- endif -%}
+  {%- if field.additionalProperties -%}
+  {{ prepareMapValue(valueName, field, root, field.additionalProperties, field.properties) }}
+  {%- endif -%}
+{%- else -%}
+{{ prepareSimpleValue(valueName, field, root) }}
+{%- endif -%}
+
+{% endmacro %}
+
+{% macro buildRule(parameters) %}
+{%- for field in parameters %}
+      {{field.name}}: {% call buildFieldRule(field.schema) %}{% endcall %}{% endfor %}
+{% endmacro %}
+
+{%- macro buildFieldRule(schema) %}{
+        type: {% if schema.format in ['enum', 'url', 'password', 'id', 'email', 'date', 'datetime', 'dateTime'] %}'{{schema.format}}'{% else %}'{{utils.primitiveType(schema)}}'{% endif %}, required: {%- if schema.required %} {{schema.required}}{% else %} false{% endif %},
+ {%- if schema.convertType !== undefined %} convertType: '{{schema.convertType}}',{%- endif %}
+ {%- if schema.default !== undefined %} default: '{{schema.default}}',{%- endif %}
+ {%- if schema.widelyUndefined !== undefined %} widelyUndefined: {{schema.widelyUndefined}},{% endif %}
+ {%- if utils.primitiveType(schema) in ['number', 'string', 'array', 'password'] and schema.max !== undefined  %} max: {{schema.max}},{% endif %}
+ {%- if utils.primitiveType(schema) in ['number', 'string', 'array', 'password'] and schema.min !== undefined  %} min: {{schema.min}},{% endif %}
+ {%- if utils.primitiveType(schema) === 'string' %} {%- if schema.allowEmpty !== undefined %} allowEmpty: {{schema.allowEmpty}},{% endif %} {%- if schema.format === 'enum' and schema.enum.length > 0 %} values: [{% for v in schema.enum %}'{{v}}', {% endfor %}],{%- endif %}{% if schema.format === 'password' %}{%- if schema.compare !== undefined %} compare: '{{schema.compare}}',{%- endif %}{% endif %}
+ {%- if schema.regExp !== undefined %} format: {{schema.regExp}},{% endif %}
+ {%- if schema.trim !== undefined %} trim: {{schema.trim}},{% endif %}{%- endif %}
+ {%- if utils.primitiveType(schema) === 'object' and schema.properties -%} rule: { {%- call buildProperties(schema.properties) %}{%- endcall -%} }, {%- endif -%}
+ {%- if utils.primitiveType(schema) === 'array' and schema.items !== undefined %} {%- call buildItems(schema.items) %}{%- endcall %}{%- endif %} },
+{%- endmacro %}
+
+{%- macro buildProperties(properties) %} {%- for name, schema in properties -%}{{name}}: {%- call buildFieldRule(schema) -%}{%- endcall -%}{%- endfor -%}{%- endmacro -%}
+
+{%- macro buildItems(items) %} itemType: {% if items.format !== undefined %}'{{ items.format }}', {% else %}'{{ items.type }}', {% endif %}{%- if utils.primitiveType(items) === 'array' %} rule: {%- call buildFieldRule(items) %}{%- endcall %}{%- elif utils.primitiveType(items) === 'object' %} rule: { {%- call buildProperties(items.properties) %}{%- endcall %} }{% else %}rule: {%- call buildFieldRule(items) %}{%- endcall %}{%- endif %}{%- endmacro %}

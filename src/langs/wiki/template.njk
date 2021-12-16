@@ -1,0 +1,113 @@
+<p><a href="http://swagger.17zuoye.net/?url=http://swagger.17zuoye.net/apidoc/{{openApi.project}}/api.yaml"></a></p>
+<h3>
+    <img class="editor-inline-macro" src="/plugins/servlet/confluence/placeholder/macro?definition=e3RvY30&amp;locale=zh_CN&amp;version=2" data-macro-name="toc">
+</h3>
+{%- set index = 1 %}
+{% for path, methods in openApi.paths %}
+{% for method, request in methods %}
+<h3>{{index}}、{{request.summary}}：{{request.name}}</h3>
+{% set index = index + 1 %}
+<p>1）请求路径：{{method}} {{path}}</p>
+<p>2）请求参数：{% if not request.parameters or request.parameters.length === 0 %}无{% endif %}</p>
+{% if request.parameters and request.parameters.length > 0 %}
+<table class="confluenceTable">
+  <tbody>
+    <tr>
+      <th class="confluenceTh">
+        <div class="tablesorter-header-inner">
+          <div class="tablesorter-header-inner">
+            <div class="tablesorter-header-inner">字段</div>
+          </div>
+        </div>
+      </th>
+      <th class="confluenceTh">
+        <div class="tablesorter-header-inner">
+          <div class="tablesorter-header-inner">
+            <div class="tablesorter-header-inner">类型</div>
+		  </div>
+        </div>
+      </th>
+      <th class="confluenceTh">
+        <div class="tablesorter-header-inner">
+          <div class="tablesorter-header-inner">
+            <div class="tablesorter-header-inner">说明</div>
+		  </div>
+        </div>
+      </th>
+    </tr>
+	{% for parameter in request.parameters %}
+    <tr>
+      <td class="confluenceTd" colspan="1">{{parameter.name}}</td>
+      <td class="confluenceTd" colspan="1">{{utils.typeFor(parameter.schema)}}</td>
+      <td class="confluenceTd" colspan="1"><pre>{{parameter.description}}</pre></td>
+    </tr>
+	{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% set response = request.defaultResponse() %}
+<p>3）返回类型：<span style="color: #000000;">{{ utils.typeFor(response) }}</span></p>
+<p>4）返回参数：{% if not response.properties %}无{% endif %}</p>
+{% if response.properties %}
+<table class="confluenceTable">
+  <tbody>
+    <tr>
+      <th class="confluenceTh">字段</th>
+      <th class="confluenceTh">类型</th>
+      <th class="confluenceTh">说明</th>
+	</tr>
+	{% for name, schema in response.properties %}
+    <tr>
+      <td class="confluenceTd">
+        <pre>{{ name }}</pre></td>
+      <td class="confluenceTd">
+		{# (function(){
+			return getTypeStr(field);
+
+			function getTypeStr(field)
+			{
+				var type = transformType(field.type);
+				// 基础类型
+				if(type.class == "basic") return type.to;
+				// 其他类型
+				var config = getConfigByName("type", type.customName);
+				var tempArr = [];
+				if(config.fields != null)
+				{
+					for(var i = 0, len = config.fields.length; i < len; i++)
+					{
+						var subField = config.fields[i];
+						tempArr.push(`<tr>
+						  <td class="confluenceTd" colspan="1"><pre>${subField.name}</pre></td>
+						  <td class="confluenceTd" colspan="1">${getTypeStr(subField)}</td>
+						  <td class="confluenceTd" colspan="1">${subField.comment}</td>
+						</tr>`);
+					}
+				}
+				var res = getCustomNames([{type:type}]).length == 0 ? "" : `<table class="confluenceTable">
+				  <tbody>
+					<tr>
+					  <th class="confluenceTh">字段</th>
+					  <th class="confluenceTh">类型</th>
+					  <th class="confluenceTh">说明</th>
+					</tr>
+					${tempArr.join("")}
+				  </tbody>
+				</table>`;
+				// 复杂类型、数组或Map类型
+				if(type.class == "custom" || type.class == "array" || type.class == "map")
+				{
+					return "<pre><span>" + type.to + "</span></pre>" + res;
+				}
+			}
+		})() #}
+      <pre><span>{{ utils.typeFor(schema) }}</span></pre>
+      </td>
+      <td class="confluenceTd">{{schema.description}}</td>
+	</tr>
+	{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endfor %}
+{% endfor %}

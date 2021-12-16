@@ -1,0 +1,123 @@
+{# interface #}
+
+{%- macro renderschema(key, struct) -%}
+    {%- if struct.beaf %}
+        {{key}}: {
+        {%- if struct.properties.properties-%}
+        {%-for key, val in struct.properties.properties %}
+            {{renderschema(key, val)}}
+        {%-endfor-%}
+        {%-elif struct.properties-%}
+        {%-for key, val in struct.properties %}
+            {{renderschema(key, val)}}
+        {%-endfor-%}
+        {%-endif%}
+        }{%- if struct.type == "array" -%}[]{%-endif %};
+    {% else %}
+        {{key}}: {{struct.type}};
+    {%-endif-%}
+{%endmacro%}
+
+{%- for interface , schema in schemas-%}
+export interface In{{interface}} {
+    {%- for key, val in schema.properties-%}
+        {{renderschema(key, val)}}
+    {%- endfor %}
+}
+{% endfor -%}
+
+{%- macro renderStruct(key, struct, last) -%}
+    // {{key}}
+    {%-if key == "get" %} {# get 请求#}
+        get(
+            {%-if struct.path -%}
+                {%-for k, t in struct.path-%}
+                {{k}}: {{t.type}},
+                {%- endfor -%}
+            {%- endif -%}
+            {%-if struct.query -%}
+            query: {
+            {%- for param, type in struct.query -%}
+                {{param}}:{{type.type}},
+            {%-endfor-%}
+            }
+            {%-endif-%}
+        ): Promise<{
+            {% if struct.responses -%}
+            {%- for k, res in struct.responses %}
+
+            {{renderschema(k, res)}}
+            {%- endfor-%}
+            {% endif -%}
+        }>{
+            {% if struct.query -%}
+            let url = `${process.env.HOST}{{struct.url}}?${Object.entries(query).map((k, v)=>`${k}=${encodeURIComponent(v)}`).join("&")}`
+            {%- else -%}
+            let url = `${process.env.HOST}{{struct.url}}`
+            {% endif %}
+            return new Promise((resolve, reject)=>{
+                let xhr = new XMLHttpRequest()
+
+                xhr.open("{{key}}", url, true);
+                xhr.onreadystatechange = function onreadystatechange(): void {
+                    if(xhr.readyState === XMLHttpRequest.DONE) {
+                        if(xhr.status === 200){
+                            resolve(JSON.parse(xhr.response))
+                        }else{
+                            reject(JSON.parse(xhr.response))
+                        }
+                    }
+                }
+                xhr.send();
+            })
+        },
+    {%-elif  key == "post" or key == "put" or key == "delete" -%} {# post put delete 请求#}
+        {{key}}(
+            {%-if struct.path -%}
+                {%-for k, t in struct.path-%}
+                {{k}}: {{t.type}},
+                {%- endfor -%}
+            {%- endif -%}
+            {%-if struct.body -%}
+            data: {
+                {%- for param, type in struct.body -%}
+                {{param}}:{{type.type}},
+                {%-endfor-%}}
+            {%-endif-%}): Promise<{
+                {% if struct.responses -%}
+                {%- for k, res in struct.responses-%}
+                {{renderschema(k, res)}} {# /**{{res | dump | safe}}*/ #}
+                {%- endfor-%}
+                {%- endif %}
+            }>{
+            return new Promise((resolve, reject)=>{
+                let xhr = new XMLHttpRequest()
+
+                xhr.open("{{key}}", `${process.env.HOST}{{struct.url}}`, true);
+                xhr.onreadystatechange = function onreadystatechange(): void {
+                    if(xhr.readyState === XMLHttpRequest.DONE) {
+                        if(xhr.status === 200){
+                            resolve(JSON.parse(xhr.response))
+                        }else{
+                            reject(JSON.parse(xhr.response))
+                        }
+                    }
+                }
+                xhr.send(JSON.stringify(data));
+            })
+        },
+    {%- else -%} {# 递归 #}
+        {{key}}: {
+            {%-for key, item in struct %}
+                {{ renderStruct(key, item ) }}
+            {%-endfor%}
+        },
+    {%-endif %}
+{%- endmacro -%}
+
+const services = {
+    {%-for key, item in services -%}
+        {{ renderStruct(key, item) }}
+    {%endfor%}
+}
+export default services
